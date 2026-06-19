@@ -1,29 +1,51 @@
 import os
-from mem0 import MemoryClient
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv()  # reads .env into os.environ, if present
 
-client = MemoryClient(api_key=os.getenv("MEM0_API_KEY"))
+import streamlit as st
+from mem0 import MemoryClient
+
+
+def _get_secret(key: str):
+    """Get a secret from .env first, falling back to st.secrets if present.
+
+    st.secrets raises StreamlitSecretNotFoundError the moment it's accessed
+    (even via .get()) if no secrets.toml file exists anywhere on disk — so
+    we can't just chain `st.secrets.get(...) or os.getenv(...)`. We check
+    the environment first and only touch st.secrets inside a try/except.
+    """
+    val = os.getenv(key)
+    if val:
+        return val
+    try:
+        return st.secrets[key]
+    except Exception:
+        return None
+
+
+# Initialize client
+api_key = _get_secret("MEM0_API_KEY")
+if not api_key:
+    st.error(
+        "MEM0_API_KEY not found. Add it to a .env file in your project root "
+        "(MEM0_API_KEY=your_key_here) or to .streamlit/secrets.toml."
+    )
+    st.stop()
+
+client = MemoryClient(api_key=api_key)
 
 def commit_session_to_memory(student_id: str, chat_history: list):
-    """Sends the full conversation history to Mem0 for auto-summarization."""
-    formatted_messages = []
-    
-    for msg in chat_history:
-        # Use .type and .content attributes for LangChain messages
-        role = "assistant" if msg.type == "ai" else "user"
-        content = msg.content
-        formatted_messages.append(f"{role}: {content}")
-        
-    full_text = "\n".join(formatted_messages)
-    
-    # Send to Mem0
-    client.add(full_text, user_id=student_id)
-
-def get_student_history(student_id: str):
-    """Retrieves all memory facts for a specific student."""
-    response = client.search("What is the student's background and history?", filters={"user_id": student_id})
-    # Extract the 'memory' text from the results list
-    memories = [r.get('memory') for r in response.get('results', [])]
-    return memories
+    """Saves a list of dictionaries to Mem0."""
+    # Mem0 expects OpenAI-style roles ("user" / "assistant"), but our UI
+    # stores the assistant turn as "ai". Normalize before sending.
+    normalized = [
+        {"role": "assistant" if m["role"] == "ai" else m["role"], "content": m["content"]}
+        for m in chat_history
+    ]
+    try:
+        client.add(normalized, user_id=student_id)
+        return True
+    except Exception as e:
+        st.error(f"Mem0 API Error: {str(e)}")
+        return False
