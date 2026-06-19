@@ -2,6 +2,7 @@ streamlit==1.32.0
 langchain-openai==0.1.0
 python-dotenv==1.0.1
 gspread==6.1.2
-langgraph==0.0.30
+langgraph==0.2.6
+langgraph-prebuilt==0.1.0
 pandas
 openpyxl
