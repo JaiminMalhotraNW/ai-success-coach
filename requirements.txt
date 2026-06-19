@@ -1,7 +1,11 @@
-streamlit
-langchain-openai
+streamlit>=1.32.0
+langchain-openai>=0.1.0
 python-dotenv
 gspread
-langgraph
+langgraph>=0.2.6
+langgraph-prebuilt>=0.1.0
 pandas
 openpyxl
+langchain-chroma>=0.1.1
+chromadb>=0.5.0
+tiktoken
