@@ -59,8 +59,8 @@ def get_student_memory(student_id: str) -> str:
         # We use a broad query to pull in both facts and session summaries
         results = client.search(
             query="What are the key facts, recurring issues, stress triggers, and past session summaries for this student?",
-            user_id=student_id,
-            limit=10 # Pull the top 10 most relevant memories
+            filters={"user_id": student_id}, 
+            limit=10 
         )
         
         # If no memories exist yet, return a blank string
