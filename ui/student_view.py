@@ -4,6 +4,9 @@ from langchain_core.messages import HumanMessage, AIMessage
 from tools.sheets_client import get_roster
 from tools.memory_manager import commit_session_to_memory, get_student_memory
 
+from tools.signal_detector import detect_signal
+from tools.sheets_client import append_signal
+
 @st.cache_data(ttl=600)
 def fetch_roster():
     return get_roster()
@@ -68,18 +71,32 @@ def render_student_view():
             with st.chat_message("assistant" if msg["role"] == "ai" else "user"):
                 st.markdown(msg["content"])
 
-        # M4: End Session & Save Memory
+        # M4, M5, & M6: End Session, Save Memory, and Detect Signals
         if st.button("🛑 End Session & Save Memory", type="secondary"):
             if st.session_state.messages:
-                with st.spinner("Saving summary to your memory vault..."):
+                with st.spinner("Saving summary and analyzing session..."):
+                    
+                    # 1. M4: Save the memory to Mem0
                     saved = commit_session_to_memory(
                         st.session_state.current_student_id, 
                         st.session_state.messages
                     )
+                    
+                    # 2. M6: Detect if there is a signal in the chat
+                    signal_output = detect_signal(st.session_state.messages)
+                    
+                    # 3. M6: If a signal exists, push it to Google Sheets
+                    if signal_output.has_signal:
+                        append_signal(
+                            st.session_state.current_student_id,
+                            st.session_state.current_student_name,
+                            signal_output
+                        )
+
                 if saved:
-                    st.success("Session saved!")
+                    st.success("Session saved successfully!")
             
-            # Reset state
+            # Reset state for the next session
             st.session_state.messages = []
             st.session_state.selection_made = False
             st.rerun()

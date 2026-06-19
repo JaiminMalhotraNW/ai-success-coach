@@ -2,6 +2,7 @@ import os
 import json
 import gspread
 from langchain_core.tools import tool
+from datetime import datetime
 
 def get_client_and_url():
     """Helper function to authenticate and return the client and url."""
@@ -68,3 +69,34 @@ def get_upcoming_exams(student_id: str) -> str:
         return "\n".join(output)
     except Exception as e:
         return f"Error retrieving exams: {str(e)}"
+
+def append_signal(student_id: str, student_name: str, signal_output):
+    """
+    Appends a detected signal to the 'signal_sheet' worksheet.
+    Expected columns: Timestamp, Student ID, Name, Concern, Severity, Urgency, Status
+    """
+    try:
+        # FIX 1: Use your existing helper function to grab the tab!
+        sheet = get_tab("signal_sheet")
+        
+        # Format current timestamp
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        
+        # Prepare the row exactly matching your column headers
+        row = [
+            student_id,               # A: student_id
+            "Automated Alert",        # B: signal_type (We can hardcode this since the AI generated it)
+            signal_output.severity,   # C: severity
+            signal_output.urgency,    # D: urgency
+            signal_output.concern,    # E: reason
+            timestamp,                # F: timestamp
+            "Open"                    # G: actioned
+        ]
+        
+        # Push to Google Sheets
+        sheet.append_row(row)
+        return True
+        
+    except Exception as e:
+        print(f"DEBUG: Failed to append signal to Google Sheets: {e}")
+        return False
