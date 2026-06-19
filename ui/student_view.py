@@ -4,17 +4,18 @@ from langchain_core.messages import HumanMessage, AIMessage
 from tools.sheets_client import get_roster
 from tools.memory_manager import commit_session_to_memory, get_student_memory
 
-# 1. Initialize State as Dictionaries
-if "selection_made" not in st.session_state:
-    st.session_state.selection_made = False
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-
 @st.cache_data(ttl=600)
 def fetch_roster():
     return get_roster()
 
 def render_student_view():
+    # 1. Initialize State INSIDE the render function
+    # This guarantees it runs for every new user session on Streamlit Cloud
+    if "selection_made" not in st.session_state:
+        st.session_state.selection_made = False
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+
     # --- STEP 1: LOGIN SCREEN ---
     if not st.session_state.selection_made:
         st.title("🧑‍🎓 Student Login")
@@ -32,25 +33,22 @@ def render_student_view():
             
             # --- M5: DYNAMIC MEMORY GREETING ---
             with st.spinner("Ace is reviewing your file..."):
-                # 1. Check if the student has a history
                 history = get_student_memory(st.session_state.current_student_id)
                 
                 if history:
-                    # 2. If history exists, have Ace generate a personalized greeting
+                    # History exists, generate personalized greeting
                     agent = get_conversation_agent(
                         st.session_state.current_student_id, 
                         st.session_state.current_student_name
                     )
-                    
-                    # Send a hidden prompt to the agent to generate the first message
                     system_nudge = "[SYSTEM: Greet the student by name, briefly acknowledge a specific fact or struggle from their past history, and ask how they are doing today regarding that. Keep it warm and under 3 sentences.]"
                     initial_response = agent.invoke({"messages": [HumanMessage(content=system_nudge)]})
                     greeting = initial_response["messages"][-1].content
                 else:
-                    # 3. If no history (first session), use standard greeting
+                    # First time session
                     greeting = f"Hello {st.session_state.current_student_name}! 👋 I'm Ace, your Success Coach AI. How are your classes going today?"
             
-            # Save the greeting to our dictionary state
+            # Store messages as standard dictionaries
             st.session_state.messages = [{"role": "ai", "content": greeting}]
             st.session_state.selection_made = True
             st.rerun()
@@ -65,12 +63,12 @@ def render_student_view():
             st.session_state.selection_made = False
             st.rerun()
 
-        # Display Chat (using dictionaries)
+        # Display Chat 
         for msg in st.session_state.messages:
             with st.chat_message("assistant" if msg["role"] == "ai" else "user"):
                 st.markdown(msg["content"])
 
-        # M4: End Session & Save
+        # M4: End Session & Save Memory
         if st.button("🛑 End Session & Save Memory", type="secondary"):
             if st.session_state.messages:
                 with st.spinner("Saving summary to your memory vault..."):
@@ -80,6 +78,8 @@ def render_student_view():
                     )
                 if saved:
                     st.success("Session saved!")
+            
+            # Reset state
             st.session_state.messages = []
             st.session_state.selection_made = False
             st.rerun()
