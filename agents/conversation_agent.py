@@ -1,42 +1,51 @@
-# Try the modern path first
-try:
-    from langgraph.prebuilt import create_react_agent
-except ImportError:
-    from langgraph.prebuilt.chat_agent_executor import create_react_agent
+from langchain_openai import ChatOpenAI
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.graph import StateGraph, START
+from langgraph.graph.message import add_messages
+from langchain_core.messages import SystemMessage
+from typing_extensions import TypedDict, Annotated
+from tools.memory_manager import get_student_memory
 
-from config.llm import get_llm
-from tools.sheets_client import get_student_scores, get_student_attendance, get_upcoming_exams
-# Import the new tool
-from tools.knowledge_base import search_knowledge_base
+# Define the state schema
+class State(TypedDict):
+    messages: Annotated[list, add_messages]
 
 def get_conversation_agent(student_id: str, student_name: str):
-    llm = get_llm()
-    # Add search_knowledge_base to the toolkit
-    tools = [
-        get_student_scores, 
-        get_student_attendance, 
-        get_upcoming_exams, 
-        search_knowledge_base
-    ]
-    
-    system_prompt = f"""
-You are Ace, a friendly, professional, and highly supportive academic advisor.
-Your primary goal is to help students succeed academically.
+    """
+    Creates the agent for a specific student, injecting their Mem0 history into the system prompt.
+    """
+    # Initialize the LLM (ensure OPENAI_API_KEY is in your .env or st.secrets)
+    llm = ChatOpenAI(model="gpt-5.4-mini-2026-03-17", temperature=0.7)
 
-You are currently talking to:
-- Student Name: {student_name}
-- Student ID: {student_id}
+    # 1. Retrieve the student's history from Mem0
+    student_history = get_student_memory(student_id)
 
-STRICT COMMUNICATION RULES:
-1. LANGUAGE: You must communicate EXCLUSIVELY in English.
-2. ACADEMIC ONLY: You are strictly for academic coaching. If a user asks about non-academic topics, politely apologize.
-3. EMPATHY FIRST: Never be dismissive. Validate feelings.
-4. NO DATA DUMPING: Do NOT list scores/attendance unprompted.
+    # 2. Build the dynamic System Prompt
+    system_prompt = f"""You are Ace, an empathetic and highly effective Success Coach AI.
+You are currently speaking with a student named {student_name}.
 
-PROACTIVE COACHING & KNOWLEDGE RULES:
-1. For personal data (grades, attendance, exams), use your specific student tools.
-2. If the student asks ANY question about how the course works, the setup guide, features, or product rules, ALWAYS use the `search_knowledge_base` tool to find the exact answer. Do NOT guess. Base your answer entirely on the tool's output.
+Your goal is to help them navigate academic stress, build better habits, and succeed in their coursework.
+Be concise, practical, and warm. Avoid sounding like a generic chatbot.
+
+{student_history}
+
+If the student's history mentions specific stress triggers, recurring issues, or past plans you both made, USE THAT context naturally in your conversation. Do not explicitly say "According to my memory vault..." just seamlessly pick up where you left off.
 """
-    
-    agent = create_react_agent(model=llm, tools=tools, prompt=system_prompt)
-    return agent
+
+    def chatbot(state: State):
+        # Always prepend the dynamic system message to guide the LLM's behavior
+        messages = [SystemMessage(content=system_prompt)] + state["messages"]
+        response = llm.invoke(messages)
+        return {"messages": [response]}
+
+    # Build the graph
+    workflow = StateGraph(State)
+    workflow.add_node("chatbot", chatbot)
+    workflow.add_edge(START, "chatbot")
+
+    # Use an in-memory saver for the CURRENT session's rapid back-and-forth
+    memory = MemorySaver()
+    app = workflow.compile(checkpointer=memory)
+
+    # Return the compiled graph wrapped in a config for the specific student
+    return app.with_config({"configurable": {"thread_id": student_id}})
