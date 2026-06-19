@@ -1,4 +1,10 @@
-from langgraph.prebuilt import create_react_agent
+# Try the modern path first
+try:
+    from langgraph.prebuilt import create_react_agent
+except ImportError:
+    # Fallback for slightly older versions
+    from langgraph.prebuilt.chat_agent_executor import create_react_agent
+
 from config.llm import get_llm
 from tools.sheets_client import (
     get_student_scores, 
@@ -6,6 +12,7 @@ from tools.sheets_client import (
     get_upcoming_exams
 )
 
+# ... rest of your code ...
 def get_conversation_agent(student_id: str, student_name: str):
     """Creates the LangGraph agent equipped with tools, context, and guardrails."""
     llm = get_llm()
