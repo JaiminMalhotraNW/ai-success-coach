@@ -100,3 +100,45 @@ def append_signal(student_id: str, student_name: str, signal_output):
     except Exception as e:
         print(f"DEBUG: Failed to append signal to Google Sheets: {e}")
         return False
+
+def get_open_signals():
+    """
+    Fetches all student signals from the 'signal_sheet' worksheet
+    where the actioned status is 'Open' or 'Deferred'.
+    Returns a list of dictionaries representing the rows.
+    """
+    try:
+        # Use your existing helper to open the correct tab
+        sheet = get_tab("signal_sheet")
+        all_records = sheet.get_all_records()
+        
+        # Filter for rows that haven't been finalized yet ("Open" or "Deferred")
+        active_signals = []
+        for record in all_records:
+            status = str(record.get("actioned", "")).strip().lower()
+            if status in ["open", "deferred"]:
+                active_signals.append(record)
+                
+        return active_signals
+        
+    except Exception as e:
+        print(f"DEBUG: Failed to fetch open signals: {e}")
+        return []
+def update_signal_status(student_id: str, timestamp: str, new_status: str):
+    """
+    Finds the exact signal in the Google Sheet and updates its 'actioned' status.
+    """
+    try:
+        sheet = get_tab("signal_sheet")
+        records = sheet.get_all_records()
+        
+        for idx, row in enumerate(records):
+            # Match the exact signal using student_id and timestamp
+            if str(row.get("student_id")) == student_id and str(row.get("timestamp")) == timestamp:
+                # gspread rows are 1-indexed, and row 1 is headers. So we add 2.
+                # 'actioned' is the 6th column
+                sheet.update_cell(idx + 2, 7, new_status)
+                return True
+    except Exception as e:
+        print(f"DEBUG: Failed to update signal status: {e}")
+        return False

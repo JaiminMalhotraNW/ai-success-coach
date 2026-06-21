@@ -9,7 +9,7 @@ class SignalOutput(BaseModel):
     has_signal: bool = Field(description="True if the student expressed a concerning academic, emotional, or logistical issue. False if normal.")
     concern: str = Field(default="", description="A short 1-2 sentence summary of the specific issue. Empty if no signal.")
     severity: str = Field(default="", description="Must be one of: Low, Medium, High, Critical. Empty if no signal.")
-    urgency: str = Field(default="", description="Must be one of: Today, Tomorrow. Empty if no signal.")
+    urgency: str = Field(default="", description="Must be one of: Today, Tomorrow, This Week, Next Week. Empty if no signal.")
 
 def detect_signal(chat_history: list) -> SignalOutput:
     """
@@ -26,6 +26,12 @@ def detect_signal(chat_history: list) -> SignalOutput:
     Read the following conversation transcript between the AI Coach (Ace) and a student.
     
     Your job is to detect if there is a 'Signal' — a concerning issue that a human coach needs to review.
+
+    STRICT URGENCY RUBRIC:
+    - "Today": ONLY for immediate risk (acute panic, safety threats, missing a massive deadline today).
+    - "Tomorrow": Serious but not immediate (failing classes, severe burnout, dropout thoughts).
+    - "This Week": General stress, single bad grade, standard academic struggles.
+    - "Next Week": Minor complaints or casual venting.
     
     EXAMPLES OF SIGNALS:
     - Failing a class, missing multiple assignments, OR expressing significant stress about coursework
@@ -38,7 +44,7 @@ def detect_signal(chat_history: list) -> SignalOutput:
     - Mild, normal exam anxiety that the student is managing.
     - Positive progress and updates.
     
-    If there is a signal, categorize its severity (Low, Medium, High, Critical) and urgency (Today, Tomorrow).
+    If there is a signal, categorize its severity (Low, Medium, High, Critical) and urgency based EXACTLY on the rubric above.
     If there is NO signal, return has_signal=False and leave the rest blank.
     """
 

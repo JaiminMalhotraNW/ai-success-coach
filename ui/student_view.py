@@ -1,9 +1,8 @@
 import streamlit as st
 from agents.conversation_agent import get_conversation_agent
-from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.messages import HumanMessage, AIMessage, BaseMessage
 from tools.sheets_client import get_roster
 from tools.memory_manager import commit_session_to_memory, get_student_memory
-
 from tools.signal_detector import detect_signal
 from tools.sheets_client import append_signal
 
@@ -12,8 +11,7 @@ def fetch_roster():
     return get_roster()
 
 def render_student_view():
-    # 1. Initialize State INSIDE the render function
-    # This guarantees it runs for every new user session on Streamlit Cloud
+    # 1. Initialize State 
     if "selection_made" not in st.session_state:
         st.session_state.selection_made = False
     if "messages" not in st.session_state:
@@ -39,7 +37,6 @@ def render_student_view():
                 history = get_student_memory(st.session_state.current_student_id)
                 
                 if history:
-                    # History exists, generate personalized greeting
                     agent = get_conversation_agent(
                         st.session_state.current_student_id, 
                         st.session_state.current_student_name
@@ -48,11 +45,10 @@ def render_student_view():
                     initial_response = agent.invoke({"messages": [HumanMessage(content=system_nudge)]})
                     greeting = initial_response["messages"][-1].content
                 else:
-                    # First time session
                     greeting = f"Hello {st.session_state.current_student_name}! 👋 I'm Ace, your Success Coach AI. How are your classes going today?"
             
-            # Store messages as standard dictionaries
-            st.session_state.messages = [{"role": "ai", "content": greeting}]
+            # Store ACTUAL LangChain messages
+            st.session_state.messages = [AIMessage(content=greeting)]
             st.session_state.selection_made = True
             st.rerun()
 
@@ -66,69 +62,84 @@ def render_student_view():
             st.session_state.selection_made = False
             st.rerun()
 
-        # Display Chat 
+        # Display Chat (Safely filter out background tool messages)
         for msg in st.session_state.messages:
-            with st.chat_message("assistant" if msg["role"] == "ai" else "user"):
-                st.markdown(msg["content"])
+            if isinstance(msg, HumanMessage):
+                with st.chat_message("user"):
+                    st.markdown(msg.content)
+            elif isinstance(msg, AIMessage) and msg.content:
+                # Only display AI messages that actually have text to say
+                with st.chat_message("assistant"):
+                    st.markdown(msg.content)
 
-        # M4, M5, & M6: End Session, Save Memory, and Detect Signals
+        # --- M4 & M6: END SESSION, SAVE MEMORY, DETECT SIGNALS ---
         if st.button("🛑 End Session & Save Memory", type="secondary"):
             if st.session_state.messages:
                 with st.spinner("Saving summary and analyzing session..."):
                     
-                    # 1. M4: Save the memory to Mem0
-                    saved = commit_session_to_memory(
-                        st.session_state.current_student_id, 
-                        st.session_state.messages
-                    )
+                    # Convert Langchain messages to dicts for our custom saving functions
+                    dict_messages = [{"role": "user" if isinstance(m, HumanMessage) else "ai", "content": m.content} 
+                                     for m in st.session_state.messages if getattr(m, 'content', None)]
                     
-                    # 2. M6: Detect if there is a signal in the chat
-                    signal_output = detect_signal(st.session_state.messages)
+                    saved = commit_session_to_memory(st.session_state.current_student_id, dict_messages)
+                    signal_output = detect_signal(dict_messages)
                     
-                    # 3. M6: If a signal exists, push it to Google Sheets
                     if signal_output.has_signal:
-                        append_signal(
-                            st.session_state.current_student_id,
-                            st.session_state.current_student_name,
-                            signal_output
-                        )
+                        append_signal(st.session_state.current_student_id, st.session_state.current_student_name, signal_output)
 
                 if saved:
                     st.success("Session saved successfully!")
             
-            # Reset state for the next session
             st.session_state.messages = []
             st.session_state.selection_made = False
             st.rerun()
 
-        # Chat Input
-        if prompt := st.chat_input("Ask Ace a question..."):
-            # Append user message as dictionary
-            st.session_state.messages.append({"role": "user", "content": prompt})
+        # --- THE GHOSTING FAILSAFE LOGIC ---
+        MAX_MESSAGES = 10 
+        user_message_count = sum(1 for msg in st.session_state.messages if isinstance(msg, HumanMessage))
+
+        if user_message_count >= MAX_MESSAGES:
+            st.warning("⚠️ **Session Limit Reached:** Please click the **'🛑 End Session & Save Memory'** button to submit this conversation.")
+            prompt = st.chat_input("Session limit reached. Please save.", disabled=True)
+        elif user_message_count >= MAX_MESSAGES - 2:
+            st.info("💡 *Just a heads up: Our session is almost at its time limit. Don't forget to save our progress when we wrap up!*")
+            prompt = st.chat_input("Type your message here...")
+        else:
+            prompt = st.chat_input("Ask Ace a question...")
+
+        # --- CHAT INPUT & LLM GENERATION ---
+        if prompt:
+            # Append actual HumanMessage
+            new_msg = HumanMessage(content=prompt)
+            st.session_state.messages.append(new_msg)
             
-            # Map dictionaries to LangChain format for the agent
-            langchain_msgs = [
-                HumanMessage(content=m["content"]) if m["role"] == "user" 
-                else AIMessage(content=m["content"]) 
-                for m in st.session_state.messages
-            ]
+            with st.chat_message("user"):
+                st.markdown(prompt)
             
             with st.chat_message("assistant"):
                 agent = get_conversation_agent(
                     st.session_state.current_student_id, 
                     st.session_state.current_student_name
                 )
-                response_placeholder = st.empty()
-                full_response = ""
                 
-                # Stream the response
-                for chunk in agent.stream({"messages": langchain_msgs}, stream_mode="messages"):
-                    if isinstance(chunk[0], AIMessage) and chunk[0].content:
-                        full_response += chunk[0].content
-                        response_placeholder.markdown(full_response + "▌")
-                
-                response_placeholder.markdown(full_response)
-                
-                # Append AI response as dictionary
-                st.session_state.messages.append({"role": "ai", "content": full_response})
+                # Show a spinner while the agent thinks and uses its tools
+                with st.spinner("Ace is checking your records..."):
+                    try:
+                        # .invoke() runs the full graph, including all tool calls!
+                        result = agent.invoke({"messages": st.session_state.messages})
+                        
+                        # OVERWRITE our session state with the agent's complete memory
+                        # This perfectly saves all invisible ToolMessages so the AI doesn't forget
+                        st.session_state.messages = result["messages"]
+                        
+                        # Find the very last message the AI generated and display it
+                        final_ai_msg = st.session_state.messages[-1]
+                        st.markdown(final_ai_msg.content)
+                        
+                    except Exception as e:
+                        # Failsafe if a tool crashes
+                        error_msg = f"Sorry, I encountered an error accessing my tools: {e}"
+                        st.error(error_msg)
+                        st.session_state.messages.append(AIMessage(content=error_msg))
+                        
             st.rerun()

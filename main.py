@@ -1,6 +1,7 @@
 import streamlit as st
-from ui.student_view import render_student_view
 from tools.knowledge_base import initialize_knowledge_base
+from ui.student_view import render_student_view
+from ui.coach_view import render_coach_view  
 
 # 1. Initialize the Knowledge Base (Milestone 3)
 # This builds the brain for Ace to answer questions
@@ -45,5 +46,5 @@ elif st.session_state.current_page == "Coach":
         st.session_state.current_page = "Home"
         st.rerun()
     
-    st.title("👩‍💼 Coach Dashboard")
-    st.info("The daily planner and alerts dashboard will be built here in Phase 4!")
+    # Just call the function, nothing else!
+    render_coach_view()

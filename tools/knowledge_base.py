@@ -39,15 +39,18 @@ def initialize_knowledge_base():
 
 @tool
 def search_knowledge_base(query: str) -> str:
-    """Use this to answer questions about the course."""
+    """Use this tool to answer any questions about the platform, My Journey, Bookmarks, Certificates, or Course Exams."""
     try:
         embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
-        # Use absolute path here too
         vector_store = Chroma(
             persist_directory=str(DB_DIR), 
             embedding_function=embeddings
         )
         results = vector_store.similarity_search(query, k=3)
+        
+        if not results:
+            return "No relevant information found in the knowledge base."
+            
         return "\n\n".join([doc.page_content for doc in results])
     except Exception as e:
-        return f"Could not search knowledge base: {str(e)}"
+        return f"Error accessing knowledge base: {e}"
