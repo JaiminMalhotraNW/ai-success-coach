@@ -142,3 +142,42 @@ def update_signal_status(student_id: str, timestamp: str, new_status: str):
     except Exception as e:
         print(f"DEBUG: Failed to update signal status: {e}")
         return False
+
+def get_daily_schedule(target_date: str):
+    """Fetches the locked schedule for a specific date."""
+    try:
+        sheet = get_tab("daily_schedule")
+        records = sheet.get_all_records()
+        return [r for r in records if str(r.get("date", "")) == target_date]
+    except Exception as e:
+        print(f"DEBUG: Failed to fetch daily schedule: {e}")
+        return []
+
+def clear_and_save_daily_schedule(target_date: str, new_schedule: list):
+    """Replaces the entire schedule for a specific date with a new list of rows."""
+    try:
+        sheet = get_tab("daily_schedule")
+        records = sheet.get_all_records()
+        
+        # Keep rows that belong to OTHER dates
+        kept_rows = [r for r in records if str(r.get("date", "")) != target_date]
+        
+        # Combine with the new schedule for today
+        final_rows = kept_rows + new_schedule
+        
+        # Clear the sheet and rewrite everything (safest way to avoid row-shifting bugs)
+        sheet.clear()
+        
+        # Write headers
+        headers = ["date", "time_slot", "student_id", "session_type", "reason"]
+        sheet.append_row(headers)
+        
+        # Write data
+        if final_rows:
+            data_matrix = [[row.get(h, "") for h in headers] for row in final_rows]
+            sheet.append_rows(data_matrix)
+            
+        return True
+    except Exception as e:
+        print(f"DEBUG: Failed to update daily schedule: {e}")
+        return False
