@@ -12,3 +12,7 @@ langchain-community
 tiktoken
 protobuf==4.25.3
 mem0ai
+google-api-python-client
+google-auth
+google-auth-httplib2
+google-auth-oauthlib
